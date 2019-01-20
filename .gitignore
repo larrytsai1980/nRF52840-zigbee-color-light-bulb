@@ -1,0 +1,129 @@
+# Keil (MDK-ARM) files and directories
+*KEIL*
+**/arm/
+**/ARM/
+*arm4*
+*arm5_no_packs*
+*.lib
+arm_*.s
+
+# IAR files and directories
+*IAR*
+**/iar/
+*_iar.a
+iar_*.s
+*.eww
+
+# Segger Embedded Studio (SES) files and directories
+*SES*
+**/ses/
+ses_*.s
+
+# Depreceted files
+*deprecated*
+*[nN][rR][fF]51*
+!nrf51_to_nrf52.h
+
+# Documentation
+# Ignore contents of the doc directory, not the directory itself, because of the following negated rule.
+**/doc/*
+# Keep migration-document and release-notes PDF files for softdevices.
+!**/softdevice/**/doc/*.pdf
+# Keep all license files (also those in the doc directories)
+!*[Ll]icen[cs]e*
+!*LICEN[CS]E*
+
+# Other files
+vs*.dsp
+vs*.dsw
+*.vcxproj
+**/visualc/
+*.sln
+
+# CLion project files
+*.idea/
+
+### C/C++ related
+**/_build/
+
+# Prerequisites
+*.d
+
+# Compiled object files
+*.o
+*.ko
+*.obj
+*.elf
+*.slo
+*.lo
+
+## Linker output
+#*.ilk
+#*.map
+#*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+# *.hex - Do not exclude .hex files because _build directory is excluded, and .hex are also SoftDevices.
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+
+### Windows
+# Windows thumbnail cache files
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+
+# Dump file
+*.stackdump
+
+# Folder config file
+[Dd]esktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+
+### Linux
+*~
+
+# temporary files which can be created if a process still has a handle open of a deleted file
+.fuse_hidden*
+
+# KDE directory preferences
+.directory
+
+# Linux trash folder which might appear on any partition or disk
+.Trash-*
+
+# .nfs files are created when an open file is removed but is still being accessed
+.nfs*
