@@ -49,7 +49,7 @@
  * This application uses the @ref srvlib_conn_params module.
  */
 #include "zboss_api.h"
-#include "zb_mem_config_min.h"
+//#include "zb_mem_config_min.h"
 #include "zb_error_handler.h"
 
 #include "zigbee_color_light.h"
@@ -98,9 +98,10 @@
 #define UART_RX_BUF_SIZE                    256                                     /**< UART RX buffer size. */
 
 #define IEEE_CHANNEL_MASK                   (1l << ZIGBEE_CHANNEL)                  /**< Scan only one, predefined channel to find the coordinator. */
-#define HA_COLOR_LIGHT_ENDPOINT               1                                       /**< Source endpoint used to control light bulb. */
+#define HA_COLOR_LIGHT_ENDPOINT             1                                       /**< Source endpoint used to control light bulb. */
 #define ERASE_PERSISTENT_CONFIG             ZB_FALSE                                /**< Do not erase NVRAM to save the network parameters after device reboot or power-off. NOTE: If this option is set to ZB_TRUE then do full device erase for all network devices before running other samples. */
 #define ZIGBEE_NETWORK_STATE_LED            BSP_BOARD_LED_2                         /**< LED indicating that color light bulb successfully joind ZigBee network. */
+#define MAX_CHILDREN                        10                                      /**< The maximum amount of connected devices. Setting this value to 0 disables association to this device.  */
 
 /* NOTE: Any numeric value within range 0 - 999 received over BLE UART will start a delayed toggle operation. */
 #define COMMAND_ON                          "n"                                     /**< UART command that will turn on found light bulb(s). */
@@ -109,10 +110,6 @@
 #define COMMAND_INCREASE                    "i"                                     /**< UART command that will increase brightness of found light bulb(s). */
 #define COMMAND_DECRESE                     "d"                                     /**< UART command that will decrease brightness of found light bulb(s). */
 #define DELAYED_COMMAND_RETRY_MS            100                                     /**< If sending toggle command was impossible due tothe lack of Zigbee buffers, retry sending it after DELAYED_COMMAND_RETRY_MS ms. */
-
-#if !defined ZB_ED_ROLE
-#error Define ZB_ED_ROLE to compile color light bulb (End Device) source code.
-#endif
 
 static void zigbee_command_handler(const uint8_t * p_command_str, uint16_t length);
 
@@ -604,6 +601,78 @@ static void zigbee_command_handler(const uint8_t * p_command_str, uint16_t lengt
     NRF_LOG_HEXDUMP_INFO(p_command_str, length);
 }
 
+/**@brief Function for initializing clusters attributes.
+ * 
+ * @param[IN]   p_device_ctx   Pointer to structure with device_ctx.
+ * @param[IN]   ep_id          Endpoint ID.
+ */
+static void bulb_clusters_attr_init(zb_bulb_dev_ctx_t * p_device_ctx, zb_uint8_t ep_id)
+{
+    /* Basic cluster attributes data */
+    p_device_ctx->basic_attr.zcl_version   = ZB_ZCL_VERSION;
+    p_device_ctx->basic_attr.app_version   = BULB_INIT_BASIC_APP_VERSION;
+    p_device_ctx->basic_attr.stack_version = BULB_INIT_BASIC_STACK_VERSION;
+    p_device_ctx->basic_attr.hw_version    = BULB_INIT_BASIC_HW_VERSION;
+
+    /* Use ZB_ZCL_SET_STRING_VAL to set strings, because the first byte should
+     * contain string length without trailing zero.
+     *
+     * For example "test" string wil be encoded as:
+     *   [(0x4), 't', 'e', 's', 't']
+     */
+    ZB_ZCL_SET_STRING_VAL(p_device_ctx->basic_attr.mf_name,
+                          BULB_INIT_BASIC_MANUF_NAME,
+                          ZB_ZCL_STRING_CONST_SIZE(BULB_INIT_BASIC_MANUF_NAME));
+
+    ZB_ZCL_SET_STRING_VAL(p_device_ctx->basic_attr.model_id,
+                          BULB_INIT_BASIC_MODEL_ID,
+                          ZB_ZCL_STRING_CONST_SIZE(BULB_INIT_BASIC_MODEL_ID));
+
+    ZB_ZCL_SET_STRING_VAL(p_device_ctx->basic_attr.date_code,
+                          BULB_INIT_BASIC_DATE_CODE,
+                          ZB_ZCL_STRING_CONST_SIZE(BULB_INIT_BASIC_DATE_CODE));
+
+    p_device_ctx->basic_attr.power_source = BULB_INIT_BASIC_POWER_SOURCE;
+
+    ZB_ZCL_SET_STRING_VAL(p_device_ctx->basic_attr.location_id,
+                          BULB_INIT_BASIC_LOCATION_DESC,
+                          ZB_ZCL_STRING_CONST_SIZE(BULB_INIT_BASIC_LOCATION_DESC));
+
+
+    p_device_ctx->basic_attr.ph_env = BULB_INIT_BASIC_PH_ENV;
+
+    /* Identify cluster attributes data */
+    p_device_ctx->identify_attr.identify_time       = ZB_ZCL_IDENTIFY_IDENTIFY_TIME_DEFAULT_VALUE;
+    p_device_ctx->identify_attr.commission_state    = ZB_ZCL_ATTR_IDENTIFY_COMMISSION_STATE_HA_ID_DEF_VALUE;
+
+    /* On/Off cluster attributes data */
+    p_device_ctx->on_off_attr.on_off                = (zb_bool_t)ZB_ZCL_ON_OFF_IS_ON;
+    p_device_ctx->on_off_attr.global_scene_ctrl     = ZB_TRUE;
+    p_device_ctx->on_off_attr.on_time               = 0;
+    p_device_ctx->on_off_attr.off_wait_time         = 0;
+
+    /* Level control cluster attributes data */
+    p_device_ctx->level_control_attr.current_level  = ZB_ZCL_LEVEL_CONTROL_LEVEL_MAX_VALUE; // Set current level value to maximum
+    p_device_ctx->level_control_attr.remaining_time = ZB_ZCL_LEVEL_CONTROL_REMAINING_TIME_DEFAULT_VALUE;
+    ZB_ZCL_LEVEL_CONTROL_SET_ON_OFF_VALUE(ep_id, p_device_ctx->on_off_attr.on_off);
+    ZB_ZCL_LEVEL_CONTROL_SET_LEVEL_VALUE(ep_id, p_device_ctx->level_control_attr.current_level);
+    
+    /* Color control cluster attributes data */
+    p_device_ctx->color_control_attr.set_color_info.current_hue         = ZB_ZCL_COLOR_CONTROL_HUE_RED;
+    p_device_ctx->color_control_attr.set_color_info.current_saturation  = ZB_ZCL_COLOR_CONTROL_CURRENT_SATURATION_MAX_VALUE;
+    /* Set to use hue & saturation */
+    p_device_ctx->color_control_attr.set_color_info.color_mode          = ZB_ZCL_COLOR_CONTROL_COLOR_MODE_HUE_SATURATION;
+    p_device_ctx->color_control_attr.set_color_info.color_temperature   = ZB_ZCL_COLOR_CONTROL_COLOR_TEMPERATURE_DEF_VALUE;
+    p_device_ctx->color_control_attr.set_color_info.remaining_time      = ZB_ZCL_COLOR_CONTROL_REMAINING_TIME_MIN_VALUE;
+    p_device_ctx->color_control_attr.set_color_info.color_capabilities  = ZB_ZCL_COLOR_CONTROL_CAPABILITIES_HUE_SATURATION;
+    /* According to ZCL spec 5.2.2.2.1.12 0x00 shall be set when CurrentHue and CurrentSaturation are used. */
+    p_device_ctx->color_control_attr.set_color_info.enhanced_color_mode = 0x00;
+    /* According to 5.2.2.2.1.10 execute commands when device is off. */
+    p_device_ctx->color_control_attr.set_color_info.color_capabilities  = ZB_ZCL_COLOR_CONTROL_OPTIONS_EXECUTE_IF_OFF;
+    /* According to ZCL spec 5.2.2.2.2 0xFF shall be set when specific value is unknown. */
+    p_device_ctx->color_control_attr.set_defined_primaries_info.number_primaries = 0xff;
+}
+
 /**@brief Function for initializing the Zigbee Stack
  */
 static void zigbee_init(void)
@@ -623,17 +692,20 @@ static void zigbee_init(void)
     zb_set_long_address(ieee_addr);
 
     /* Set up Zigbee protocol main parameters. */
-    zb_set_network_ed_role(IEEE_CHANNEL_MASK);
+    zb_set_network_router_role(IEEE_CHANNEL_MASK);
+    zb_set_max_children(MAX_CHILDREN);
     zb_set_nvram_erase_at_start(ERASE_PERSISTENT_CONFIG);
-
-    zb_set_ed_timeout(ED_AGING_TIMEOUT_64MIN);
     zb_set_keepalive_timeout(ZB_MILLISECONDS_TO_BEACON_INTERVAL(3000));
 
     /* Initialize application context structure. */
     UNUSED_RETURN_VALUE(ZB_MEMSET(&zb_dev_ctx, 0, sizeof(zb_dev_ctx)));
 
-    /* Register dimmer switch device context (endpoints). */
+    /* Register color light bulb device context (endpoints). */
     ZB_AF_REGISTER_DEVICE_CTX(&color_light_ctx);
+
+    /* Init attributes for endpoints */
+    bulb_clusters_attr_init(&zb_dev_ctx, HA_COLOR_LIGHT_ENDPOINT);
+    //TODO: set level of bulb
 }
 
 /**@brief ZigBee stack event handler.
@@ -677,14 +749,6 @@ void zboss_signal_handler(zb_uint8_t param)
             else
             {
                 NRF_LOG_ERROR("Unable to leave network. Status: %d", status);
-            }
-            break;
-
-        case ZB_COMMON_SIGNAL_CAN_SLEEP:
-            {
-                zb_zdo_signal_can_sleep_params_t *can_sleep_params = ZB_ZDO_SIGNAL_GET_PARAMS(p_sg_p, zb_zdo_signal_can_sleep_params_t);
-                NRF_LOG_INFO("Can sleep for %ld ms", can_sleep_params->sleep_tmo);
-                zb_sleep_now();
             }
             break;
 

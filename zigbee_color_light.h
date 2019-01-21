@@ -354,8 +354,8 @@ extern "C" {
                                             dev_ctx_name## _color_control_attr_list,                                                       \
                                             ZB_FALSE);
 
-#if !defined ZB_ED_ROLE
-#error Define ZB_ED_ROLE to compile light bulb (end-device) source code.
+#if !defined ZB_ROUTER_ROLE
+#error Define ZB_ROUTER_ROLE to compile light bulb source code.
 #endif
 
 /* Zigbee color light bulb cluster context. Stores all settings and static values. */
