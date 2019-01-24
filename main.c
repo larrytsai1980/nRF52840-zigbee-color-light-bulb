@@ -690,7 +690,7 @@ static void on_off_set_value(zb_bool_t on)
         led_params.r_value = 0;
         led_params.g_value = 0;
         led_params.b_value = 0;
-        zb_update_color_values();
+        rgb_color_set(led_params.r_value, led_params.g_value, led_params.b_value);
     }
 }
 
@@ -901,6 +901,7 @@ static zb_void_t zcl_device_cb(zb_uint8_t param)
         case ZB_ZCL_LEVEL_CONTROL_SET_VALUE_CB_ID:
             /* Set new value in cluster and then use nrf_app_timer to delay thingy led update if value is changing quickly */
             NRF_LOG_INFO("Level control setting to %d", p_device_cb_param->cb_param.level_control_set_value_param.new_value);
+            level_control_set_value(p_device_cb_param->cb_param.level_control_set_value_param.new_value);
             break;
 
         case ZB_ZCL_SET_ATTR_VALUE_CB_ID:
