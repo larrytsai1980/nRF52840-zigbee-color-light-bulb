@@ -99,7 +99,7 @@
 
 #define IEEE_CHANNEL_MASK                   ((1l << 11)|(1l << 12)|(1l << 13)|(1l << 14)|(1l << 15)|(1l << 16)|(1l << 17)|(1l << 18)|(1l << 19)|(1l << 20)|(1l << 21)|(1l << 22)|(1l << 23)|(1l << 24)|(1l << 25)|(1l << 26))                  /**< Scan all channels to find the coordinator. */
 #define HA_COLOR_LIGHT_ENDPOINT             1                                       /**< Source endpoint used to control light bulb. */
-#define ERASE_PERSISTENT_CONFIG             ZB_TRUE                                /**< Do not erase NVRAM to save the network parameters after device reboot or power-off. NOTE: If this option is set to ZB_TRUE then do full device erase for all network devices before running other samples. */
+#define ERASE_PERSISTENT_CONFIG             ZB_TRUE                                 /**< Do not erase NVRAM to save the network parameters after device reboot or power-off. NOTE: If this option is set to ZB_TRUE then do full device erase for all network devices before running other samples. */
 #define ZIGBEE_NETWORK_STATE_LED            BSP_BOARD_LED_2                         /**< LED indicating that color light bulb successfully joind ZigBee network. */
 #define MAX_CHILDREN                        10                                      /**< The maximum amount of connected devices. Setting this value to 0 disables association to this device.  */
 
@@ -611,17 +611,18 @@ static void convert_hsb_to_rgb(uint8_t hue, uint8_t saturation, uint8_t brightne
     }
 }
 
-/**@brief Function for updating RGB color value.
+/**@brief Function for setting HSB color value to color LED.
  *
- * @param[IN] p_ep_dev_ctx pointer to endpoint device ctx.
+ * @param[IN] hue new value for hue.
+ * @param[IN] saturation new value for saturation.
+ * @param[IN] brightness new value for brightness.
  */
-static void zb_update_color_values(void)
+static void zb_set_hsb_color_values(zb_uint8_t hue, zb_uint8_t saturation, zb_uint8_t brightness)
 {
-    convert_hsb_to_rgb(zb_dev_ctx.color_control_attr.set_color_info.current_hue,
-                       zb_dev_ctx.color_control_attr.set_color_info.current_saturation,
-                       zb_dev_ctx.level_control_attr.current_level,
-                       &led_params);
+    // convert HSB color model to RGB color model
+    convert_hsb_to_rgb(hue, saturation, brightness, &led_params);
 
+    // set RGB value to color LEDs
     rgb_color_set(led_params.r_value, led_params.g_value, led_params.b_value);
 }
 
@@ -632,8 +633,7 @@ static void zb_update_color_values(void)
 static void color_control_set_value_hue(zb_uint8_t new_hue)
 {
     NRF_LOG_INFO("Set color hue value: %i", new_hue);
-    zb_dev_ctx.color_control_attr.set_color_info.current_hue = new_hue;
-    zb_update_color_values();
+    zb_set_hsb_color_values(new_hue, zb_dev_ctx.color_control_attr.set_color_info.current_saturation, zb_dev_ctx.level_control_attr.current_level);
 }
 
 /**@brief Function for changing the saturation of the light bulb.
@@ -643,8 +643,7 @@ static void color_control_set_value_hue(zb_uint8_t new_hue)
 static void color_control_set_value_saturation(zb_uint8_t new_saturation)
 {
     NRF_LOG_INFO("Set color saturation value: %i", new_saturation);
-    zb_dev_ctx.color_control_attr.set_color_info.current_saturation = new_saturation;
-    zb_update_color_values();
+    zb_set_hsb_color_values(zb_dev_ctx.color_control_attr.set_color_info.current_hue, new_saturation, zb_dev_ctx.level_control_attr.current_level);
 }
 
 /**@brief Function for setting the light bulb brightness.
@@ -654,8 +653,7 @@ static void color_control_set_value_saturation(zb_uint8_t new_saturation)
 static void level_control_set_value(zb_uint16_t new_level)
 {
     NRF_LOG_INFO("Set level value: %i", new_level);
-    zb_dev_ctx.level_control_attr.current_level = new_level;
-    zb_update_color_values();
+    zb_set_hsb_color_values(zb_dev_ctx.color_control_attr.set_color_info.current_hue, zb_dev_ctx.color_control_attr.set_color_info.current_saturation, new_level);
 
     /* According to the table 7.3 of Home Automation Profile Specification v 1.2 rev 29, chapter 7.1.3. */
    zb_dev_ctx.on_off_attr.on_off = (new_level ? ZB_TRUE : ZB_FALSE);
@@ -671,7 +669,6 @@ static void on_off_set_value(zb_bool_t on)
     zb_dev_ctx.on_off_attr.on_off = on;
 
     NRF_LOG_INFO("Set ON/OFF value: %i", on);
-
     if (on)
     {
         level_control_set_value(zb_dev_ctx.level_control_attr.current_level);
@@ -858,15 +855,19 @@ static void bulb_clusters_attr_init(zb_bulb_dev_ctx_t * p_device_ctx, zb_uint8_t
     /* Color control cluster attributes data */
     p_device_ctx->color_control_attr.set_color_info.current_hue         = ZB_ZCL_COLOR_CONTROL_HUE_RED;
     p_device_ctx->color_control_attr.set_color_info.current_saturation  = ZB_ZCL_COLOR_CONTROL_CURRENT_SATURATION_MAX_VALUE;
+
     /* Set to use hue & saturation */
     p_device_ctx->color_control_attr.set_color_info.color_mode          = ZB_ZCL_COLOR_CONTROL_COLOR_MODE_HUE_SATURATION;
     p_device_ctx->color_control_attr.set_color_info.color_temperature   = ZB_ZCL_COLOR_CONTROL_COLOR_TEMPERATURE_DEF_VALUE;
     p_device_ctx->color_control_attr.set_color_info.remaining_time      = ZB_ZCL_COLOR_CONTROL_REMAINING_TIME_MIN_VALUE;
     p_device_ctx->color_control_attr.set_color_info.color_capabilities  = ZB_ZCL_COLOR_CONTROL_CAPABILITIES_HUE_SATURATION;
+
     /* According to ZCL spec 5.2.2.2.1.12 0x00 shall be set when CurrentHue and CurrentSaturation are used. */
     p_device_ctx->color_control_attr.set_color_info.enhanced_color_mode = 0x00;
+
     /* According to 5.2.2.2.1.10 execute commands when device is off. */
     p_device_ctx->color_control_attr.set_color_info.color_capabilities  = ZB_ZCL_COLOR_CONTROL_OPTIONS_EXECUTE_IF_OFF;
+
     /* According to ZCL spec 5.2.2.2.2 0xFF shall be set when specific value is unknown. */
     p_device_ctx->color_control_attr.set_defined_primaries_info.number_primaries = 0xff;
 }
@@ -890,8 +891,6 @@ static zb_void_t zcl_device_cb(zb_uint8_t param)
     switch (p_device_cb_param->device_cb_id)
     {
         case ZB_ZCL_LEVEL_CONTROL_SET_VALUE_CB_ID:
-            /* Set new value in cluster and then use nrf_app_timer to delay thingy led update if value is changing quickly */
-            NRF_LOG_INFO("Level control setting to %d", p_device_cb_param->cb_param.level_control_set_value_param.new_value);
             level_control_set_value(p_device_cb_param->cb_param.level_control_set_value_param.new_value);
             break;
 
@@ -903,7 +902,6 @@ static zb_void_t zcl_device_cb(zb_uint8_t param)
             {
                 uint8_t value = p_device_cb_param->cb_param.set_attr_value_param.values.data8;
 
-                NRF_LOG_INFO("on/off attribute setting to %hd", value);
                 if (attr_id == ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID)
                 {
                     on_off_set_value((zb_bool_t)value);
@@ -912,8 +910,6 @@ static zb_void_t zcl_device_cb(zb_uint8_t param)
             else if (cluster_id == ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL)
             {
                 uint16_t value = p_device_cb_param->cb_param.set_attr_value_param.values.data16;
-
-                NRF_LOG_INFO("level control attribute setting to %hd", value);
                 if (attr_id == ZB_ZCL_ATTR_LEVEL_CONTROL_CURRENT_LEVEL_ID)
                 {
                     level_control_set_value(value);
@@ -926,12 +922,10 @@ static zb_void_t zcl_device_cb(zb_uint8_t param)
                 switch (attr_id)
                 {
                     case ZB_ZCL_ATTR_COLOR_CONTROL_CURRENT_HUE_ID:
-                        NRF_LOG_INFO("color control attribute setting hue to %hd", value);
                         color_control_set_value_hue(value);
                         break;
 
                     case ZB_ZCL_ATTR_COLOR_CONTROL_CURRENT_SATURATION_ID:
-                        NRF_LOG_INFO("color control attribute setting saturation to %hd", value);
                         color_control_set_value_saturation(value);
                         break;
 
