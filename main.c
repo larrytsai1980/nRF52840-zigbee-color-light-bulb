@@ -99,7 +99,7 @@
 
 #define IEEE_CHANNEL_MASK                   ((1l << 11)|(1l << 12)|(1l << 13)|(1l << 14)|(1l << 15)|(1l << 16)|(1l << 17)|(1l << 18)|(1l << 19)|(1l << 20)|(1l << 21)|(1l << 22)|(1l << 23)|(1l << 24)|(1l << 25)|(1l << 26))                  /**< Scan all channels to find the coordinator. */
 #define HA_COLOR_LIGHT_ENDPOINT             1                                       /**< Source endpoint used to control light bulb. */
-#define ERASE_PERSISTENT_CONFIG             ZB_TRUE                                 /**< Do not erase NVRAM to save the network parameters after device reboot or power-off. NOTE: If this option is set to ZB_TRUE then do full device erase for all network devices before running other samples. */
+#define ERASE_PERSISTENT_CONFIG             ZB_FALSE                                /**< Do not erase NVRAM to save the network parameters after device reboot or power-off. NOTE: If this option is set to ZB_TRUE then do full device erase for all network devices before running other samples. */
 #define ZIGBEE_NETWORK_STATE_LED            BSP_BOARD_LED_2                         /**< LED indicating that color light bulb successfully joind ZigBee network. */
 #define MAX_CHILDREN                        10                                      /**< The maximum amount of connected devices. Setting this value to 0 disables association to this device.  */
 
