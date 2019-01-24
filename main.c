@@ -54,6 +54,7 @@
 
 #include "zigbee_color_light.h"
 
+#include "nrf_drv_pwm.h"
 #include "nrf_ble_gatt.h"
 #include "nrf_sdh_ble.h"
 #include "nrf_sdh_soc.h"
@@ -71,7 +72,6 @@
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
-
 
 #define APP_BLE_CONN_CFG_TAG                1                                       /**< A tag identifying the SoftDevice BLE configuration. */
 
@@ -97,9 +97,10 @@
 #define UART_TX_BUF_SIZE                    256                                     /**< UART TX buffer size. */
 #define UART_RX_BUF_SIZE                    256                                     /**< UART RX buffer size. */
 
-#define IEEE_CHANNEL_MASK                   (1l << ZIGBEE_CHANNEL)                  /**< Scan only one, predefined channel to find the coordinator. */
+//#define IEEE_CHANNEL_MASK                   (1l << ZIGBEE_CHANNEL)                  /**< Scan only one, predefined channel to find the coordinator. */
+#define IEEE_CHANNEL_MASK                   ((1l << 11)|(1l << 12)|(1l << 13)|(1l << 14)|(1l << 15)|(1l << 16)|(1l << 17)|(1l << 18)|(1l << 19)|(1l << 20)|(1l << 21)|(1l << 22)|(1l << 23)|(1l << 24)|(1l << 25)|(1l << 26))                  /**< Scan only one, predefined channel to find the coordinator. */
 #define HA_COLOR_LIGHT_ENDPOINT             1                                       /**< Source endpoint used to control light bulb. */
-#define ERASE_PERSISTENT_CONFIG             ZB_FALSE                                /**< Do not erase NVRAM to save the network parameters after device reboot or power-off. NOTE: If this option is set to ZB_TRUE then do full device erase for all network devices before running other samples. */
+#define ERASE_PERSISTENT_CONFIG             ZB_TRUE                                /**< Do not erase NVRAM to save the network parameters after device reboot or power-off. NOTE: If this option is set to ZB_TRUE then do full device erase for all network devices before running other samples. */
 #define ZIGBEE_NETWORK_STATE_LED            BSP_BOARD_LED_2                         /**< LED indicating that color light bulb successfully joind ZigBee network. */
 #define MAX_CHILDREN                        10                                      /**< The maximum amount of connected devices. Setting this value to 0 disables association to this device.  */
 
@@ -116,6 +117,17 @@ static void zigbee_command_handler(const uint8_t * p_command_str, uint16_t lengt
 BLE_NUS_DEF(m_nus, NRF_SDH_BLE_TOTAL_LINK_COUNT);                                   /**< BLE NUS service instance. */
 NRF_BLE_GATT_DEF(m_gatt);                                                           /**< GATT module instance. */
 BLE_ADVERTISING_DEF(m_advertising);                                                 /**< Advertising module instance. */
+
+static nrf_drv_pwm_t m_pwm0 = NRF_DRV_PWM_INSTANCE(0);
+static nrf_pwm_values_individual_t m_demo1_seq_values;
+static uint16_t const              m_demo1_top  = 255;
+static nrf_pwm_sequence_t const    m_demo1_seq =
+{
+    .values.p_individual = &m_demo1_seq_values,
+    .length              = NRF_PWM_VALUES_LENGTH(m_demo1_seq_values),
+    .repeats             = 0,
+    .end_delay           = 0
+};
 
 static uint16_t   m_conn_handle          = BLE_CONN_HANDLE_INVALID;                 /**< Handle of the current connection. */
 static uint16_t   m_ble_nus_max_data_len = BLE_GATT_ATT_MTU_DEFAULT - 3;            /**< Maximum length of data (in bytes) that can be transmitted to the peer by the Nordic UART service module. */
@@ -136,6 +148,21 @@ ZB_ZCL_DECLARE_COLOR_LIGHT_EP(color_light_bulb_ep,
 /* Declare application's device context (list of registered endpoints) for Color Light Bulb device. */
 ZBOSS_DECLARE_DEVICE_CTX_1_EP(color_light_ctx, color_light_bulb_ep);
 
+/* Structure for storing data to be written to Thingy's LED characteristic */
+typedef PACKED_STRUCT led_params_s
+{
+    __PACKED union
+    {
+        PACKED_STRUCT
+        {
+            uint8_t  r_value;               /**< Red color value. */
+            uint8_t  g_value;               /**< Green color value. */
+            uint8_t  b_value;               /**< Blue color value. */
+        };
+    };
+} led_params_t;
+
+static led_params_t                led_params;                         /**< Table to store RGB color values to control thigny LED. */
 
 /**@brief Function for assert macro callback.
  *
@@ -486,6 +513,186 @@ static void timer_init(void)
     APP_ERROR_CHECK(error_code);
 }
 
+static void rgb_color_set(uint8_t r_value, uint8_t g_value, uint8_t b_value)
+{
+    NRF_LOG_INFO("Color set = %d %d %d\n", r_value, g_value, b_value);
+
+    m_demo1_seq_values.channel_0 = r_value;
+    m_demo1_seq_values.channel_1 = g_value;
+    m_demo1_seq_values.channel_2 = b_value;
+
+    (void)nrf_drv_pwm_simple_playback(&m_pwm0, &m_demo1_seq, 1,
+                                      NRF_DRV_PWM_FLAG_LOOP);
+}
+
+static void pwm_init(void)
+{
+    nrf_drv_pwm_config_t const config0 =
+    {
+        .output_pins =
+        {
+            LED2_R | NRF_DRV_PWM_PIN_INVERTED, // channel 0
+            LED2_G | NRF_DRV_PWM_PIN_INVERTED, // channel 1
+            LED2_B | NRF_DRV_PWM_PIN_INVERTED, // channel 2
+        },
+        .irq_priority = APP_IRQ_PRIORITY_LOWEST,
+        .base_clock   = NRF_PWM_CLK_1MHz,
+        .count_mode   = NRF_PWM_MODE_UP,
+        .top_value    = m_demo1_top,
+        .load_mode    = NRF_PWM_LOAD_INDIVIDUAL,
+        .step_mode    = NRF_PWM_STEP_AUTO
+    };
+    APP_ERROR_CHECK(nrf_drv_pwm_init(&m_pwm0, &config0, NULL));
+    m_demo1_seq_values.channel_0 = 0;
+    m_demo1_seq_values.channel_1 = 0;
+    m_demo1_seq_values.channel_2 = 0;
+
+    (void)nrf_drv_pwm_simple_playback(&m_pwm0, &m_demo1_seq, 1,
+                                      NRF_DRV_PWM_FLAG_LOOP);
+}
+
+/**@brief Function to convert hue_stauration to RGB color space.
+ *
+ * @param[IN]  hue          Hue value of color.
+ * @param[IN]  saturation   Saturation value of color.
+ * @param[IN]  brightness   Brightness value of color.
+ * @param[OUT] p_led_params Pointer to structure containing parameters to write to LED characteristic
+ */
+static void convert_hsb_to_rgb(uint8_t hue, uint8_t saturation, uint8_t brightness, led_params_t * p_led_params)
+{
+    /* Check if p_leds_params is not NULL pointer */
+    if (p_led_params == NULL)
+    {
+        NRF_LOG_INFO("Incorrect pointer to led params");
+        return;
+    }
+    /* C, X, m are auxiliary variables */
+    float C     = 0.0;
+    float X     = 0.0;
+    float m     = 0.0;
+    /* Convertion HSB --> RGB */
+    C = (brightness / 255.0f) * (saturation / 254.0f);
+    X = (hue / 254.0f) * 6.0f;
+    /* Casting in var X is necessary due to implementation of floating-point modulo_2 */
+    /*lint -e653 */
+    X = (X - (2 * (((uint8_t) X) / 2)));
+    /*lint -restore */
+    X -= 1.0f;
+    X = C * (1.0f - ((X > 0.0f) ? (X) : (-1.0f * X)));
+    m = (brightness / 255.0f) - C;
+
+    /* Hue value is stored in range (0 - 255) instead of (0 - 360) degree */
+    if (hue <= 42) /* hue < 60 degree */
+    {
+        p_led_params->r_value = (uint8_t)((C + m) * 255.0f);
+        p_led_params->g_value = (uint8_t)((X + m) * 255.0f);
+        p_led_params->b_value = (uint8_t)((0.0f + m) * 255.0f);
+    }
+    else if (hue <= 84)  /* hue < 120 degree */
+    {
+        p_led_params->r_value = (uint8_t)((X + m) * 255.0f);
+        p_led_params->g_value = (uint8_t)((C + m) * 255.0f);
+        p_led_params->b_value = (uint8_t)((0.0f + m) * 255.0f);
+    }
+    else if (hue <= 127) /* hue < 180 degree */
+    {
+        p_led_params->r_value = (uint8_t)((0.0f + m) * 255.0f);
+        p_led_params->g_value = (uint8_t)((C + m) * 255.0f);
+        p_led_params->b_value = (uint8_t)((X + m) * 255.0f);
+    }
+    else if (hue < 170)  /* hue < 240 degree */
+    {
+        p_led_params->r_value = (uint8_t)((0.0f + m) * 255.0f);
+        p_led_params->g_value = (uint8_t)((X + m) * 255.0f);
+        p_led_params->b_value = (uint8_t)((C + m) * 255.0f);
+    }
+    else if (hue <= 212) /* hue < 300 degree */
+    {
+        p_led_params->r_value = (uint8_t)((X + m) * 255.0f);
+        p_led_params->g_value = (uint8_t)((0.0f + m) * 255.0f);
+        p_led_params->b_value = (uint8_t)((C + m) * 255.0f);
+    }
+    else                /* hue < 360 degree */
+    {
+        p_led_params->r_value = (uint8_t)((C + m) * 255.0f);
+        p_led_params->g_value = (uint8_t)((0.0f + m) * 255.0f);
+        p_led_params->b_value = (uint8_t)((X + m) * 255.0f);
+    }
+}
+
+/**@brief Function for updating RGB color value.
+ *
+ * @param[IN] p_ep_dev_ctx pointer to endpoint device ctx.
+ */
+static void zb_update_color_values(void)
+{
+    convert_hsb_to_rgb(zb_dev_ctx.color_control_attr.set_color_info.current_hue,
+                       zb_dev_ctx.color_control_attr.set_color_info.current_saturation,
+                       zb_dev_ctx.level_control_attr.current_level,
+                       &led_params);
+
+    rgb_color_set(led_params.r_value, led_params.g_value, led_params.b_value);
+}
+
+/**@brief Function for changing the hue of the light bulb.
+ *
+ * @param[IN] new_hue       New value for hue.
+ */
+static void color_control_set_value_hue(zb_uint8_t new_hue)
+{
+    NRF_LOG_INFO("Set color hue value: %i", new_hue);
+    zb_dev_ctx.color_control_attr.set_color_info.current_hue = new_hue;
+    zb_update_color_values();
+}
+
+/**@brief Function for changing the saturation of the light bulb.
+ *
+ * @param[IN] new_saturation new value for saturation.
+ */
+static void color_control_set_value_saturation(zb_uint8_t new_saturation)
+{
+    NRF_LOG_INFO("Set color saturation value: %i", new_saturation);
+    zb_dev_ctx.color_control_attr.set_color_info.current_saturation = new_saturation;
+    zb_update_color_values();
+}
+
+/**@brief Function for setting the light bulb brightness.
+ *
+ * @param[IN] new_level    Light bulb brightness value.
+ */
+static void level_control_set_value(zb_uint16_t new_level)
+{
+    NRF_LOG_INFO("Set level value: %i", new_level);
+    zb_dev_ctx.level_control_attr.current_level = new_level;
+    zb_update_color_values();
+
+    /* According to the table 7.3 of Home Automation Profile Specification v 1.2 rev 29, chapter 7.1.3. */
+   zb_dev_ctx.on_off_attr.on_off = (new_level ? ZB_TRUE : ZB_FALSE);
+}
+
+/**@brief Function for turning ON/OFF the light bulb.
+ *
+ * @param[IN] p_ep_dev_ctx Pointer to endpoint device ctx.
+ * @param[IN] on           Boolean light bulb state.
+ */
+static void on_off_set_value(zb_bool_t on)
+{
+    zb_dev_ctx.on_off_attr.on_off = on;
+
+    NRF_LOG_INFO("Set ON/OFF value: %i", on);
+
+    if (on)
+    {
+        level_control_set_value(zb_dev_ctx.level_control_attr.current_level);
+    }
+    else
+    {
+        led_params.r_value = 0;
+        led_params.g_value = 0;
+        led_params.b_value = 0;
+        zb_update_color_values();
+    }
+}
 
 /***************************************************************************************************
  * @section Zigbee stack related functions.
@@ -673,39 +880,92 @@ static void bulb_clusters_attr_init(zb_bulb_dev_ctx_t * p_device_ctx, zb_uint8_t
     p_device_ctx->color_control_attr.set_defined_primaries_info.number_primaries = 0xff;
 }
 
-/**@brief Function for initializing the Zigbee Stack
+/**@brief Callback function for handling ZCL commands.
+ *
+ * @param[IN]   param   Reference to ZigBee stack buffer used to pass received data.
  */
-static void zigbee_init(void)
+static zb_void_t zcl_device_cb(zb_uint8_t param)
 {
-    zb_ieee_addr_t ieee_addr;
+    zb_uint16_t                       cluster_id;
+    zb_uint8_t                        attr_id;
+    zb_buf_t                        * p_buffer          = ZB_BUF_FROM_REF(param);
+    zb_zcl_device_callback_param_t  * p_device_cb_param = ZB_GET_BUF_PARAM(p_buffer, zb_zcl_device_callback_param_t);
 
-    /* Set ZigBee stack logging level and traffic dump subsystem. */
-    ZB_SET_TRACE_LEVEL(ZIGBEE_TRACE_LEVEL);
-    ZB_SET_TRACE_MASK(ZIGBEE_TRACE_MASK);
-    ZB_SET_TRAF_DUMP_OFF();
+    NRF_LOG_INFO("Received new ZCL callback %hd on endpoint %hu", p_device_cb_param->device_cb_id, p_device_cb_param->endpoint);
 
-    /* Initialize ZigBee stack. */
-    ZB_INIT("color_light_bulb");
+    /* Set default response value. */
+    p_device_cb_param->status = RET_OK;
 
-    /* Set device address to the value read from FICR registers. */
-    zb_osif_get_ieee_eui64(ieee_addr);
-    zb_set_long_address(ieee_addr);
+    switch (p_device_cb_param->device_cb_id)
+    {
+        case ZB_ZCL_LEVEL_CONTROL_SET_VALUE_CB_ID:
+            /* Set new value in cluster and then use nrf_app_timer to delay thingy led update if value is changing quickly */
+            NRF_LOG_INFO("Level control setting to %d", p_device_cb_param->cb_param.level_control_set_value_param.new_value);
+            break;
 
-    /* Set up Zigbee protocol main parameters. */
-    zb_set_network_router_role(IEEE_CHANNEL_MASK);
-    zb_set_max_children(MAX_CHILDREN);
-    zb_set_nvram_erase_at_start(ERASE_PERSISTENT_CONFIG);
-    zb_set_keepalive_timeout(ZB_MILLISECONDS_TO_BEACON_INTERVAL(3000));
+        case ZB_ZCL_SET_ATTR_VALUE_CB_ID:
+            cluster_id = p_device_cb_param->cb_param.set_attr_value_param.cluster_id;
+            attr_id    = p_device_cb_param->cb_param.set_attr_value_param.attr_id;
 
-    /* Initialize application context structure. */
-    UNUSED_RETURN_VALUE(ZB_MEMSET(&zb_dev_ctx, 0, sizeof(zb_dev_ctx)));
+            if (cluster_id == ZB_ZCL_CLUSTER_ID_ON_OFF)
+            {
+                uint8_t value = p_device_cb_param->cb_param.set_attr_value_param.values.data8;
 
-    /* Register color light bulb device context (endpoints). */
-    ZB_AF_REGISTER_DEVICE_CTX(&color_light_ctx);
+                NRF_LOG_INFO("on/off attribute setting to %hd", value);
+                if (attr_id == ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID)
+                {
+                    on_off_set_value((zb_bool_t)value);
+                }
+            }
+            else if (cluster_id == ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL)
+            {
+                uint16_t value = p_device_cb_param->cb_param.set_attr_value_param.values.data16;
 
-    /* Init attributes for endpoints */
-    bulb_clusters_attr_init(&zb_dev_ctx, HA_COLOR_LIGHT_ENDPOINT);
-    //TODO: set level of bulb
+                NRF_LOG_INFO("level control attribute setting to %hd", value);
+                if (attr_id == ZB_ZCL_ATTR_LEVEL_CONTROL_CURRENT_LEVEL_ID)
+                {
+                    level_control_set_value(value);
+                }
+            }
+            else if (cluster_id == ZB_ZCL_CLUSTER_ID_COLOR_CONTROL)
+            {
+                // TODO: check remaining_time
+                //if (p_device_ep_ctx->p_device_ctx->color_control_attr.set_color_info.remaining_time <= 1)
+                {
+                    uint16_t value = p_device_cb_param->cb_param.set_attr_value_param.values.data16;
+
+                    switch (attr_id)
+                    {
+                        case ZB_ZCL_ATTR_COLOR_CONTROL_CURRENT_HUE_ID:
+                            NRF_LOG_INFO("color control attribute setting hue to %hd", value);
+                            color_control_set_value_hue(value);
+                            break;
+
+                        case ZB_ZCL_ATTR_COLOR_CONTROL_CURRENT_SATURATION_ID:
+                            NRF_LOG_INFO("color control attribute setting saturation to %hd", value);
+                            color_control_set_value_saturation(value);
+                            break;
+
+                        default:
+                            NRF_LOG_INFO("Unused attribute");
+                            break;
+                    }
+                }
+            }
+            else
+            {
+                /* Other clusters can be processed here */
+                NRF_LOG_INFO("Unhandled cluster attribute id: %d", cluster_id);
+            }
+            break;
+
+        default:
+            p_device_cb_param->status = RET_ERROR;
+            NRF_LOG_INFO("Default case, returned error");
+            break;
+    }
+
+    NRF_LOG_INFO("zcl_device_cb status: %hd", p_device_cb_param->status);
 }
 
 /**@brief ZigBee stack event handler.
@@ -770,6 +1030,45 @@ void zboss_signal_handler(zb_uint8_t param)
     }
 }
 
+/**@brief Function for initializing the Zigbee Stack
+ */
+static void zigbee_init(void)
+{
+    zb_ieee_addr_t ieee_addr;
+
+    /* Set ZigBee stack logging level and traffic dump subsystem. */
+    ZB_SET_TRACE_LEVEL(ZIGBEE_TRACE_LEVEL);
+    ZB_SET_TRACE_MASK(ZIGBEE_TRACE_MASK);
+    ZB_SET_TRAF_DUMP_OFF();
+
+    /* Initialize ZigBee stack. */
+    ZB_INIT("color_light_bulb");
+
+    /* Set device address to the value read from FICR registers. */
+    zb_osif_get_ieee_eui64(ieee_addr);
+    zb_set_long_address(ieee_addr);
+
+    /* Set up Zigbee protocol main parameters. */
+    zb_set_network_router_role(IEEE_CHANNEL_MASK);
+    zb_set_max_children(MAX_CHILDREN);
+    zb_set_nvram_erase_at_start(ERASE_PERSISTENT_CONFIG);
+    zb_set_keepalive_timeout(ZB_MILLISECONDS_TO_BEACON_INTERVAL(3000));
+
+    /* Initialize application context structure. */
+    UNUSED_RETURN_VALUE(ZB_MEMSET(&zb_dev_ctx, 0, sizeof(zb_dev_ctx)));
+
+    /* Register color light bulb device context (endpoints). */
+    ZB_AF_REGISTER_DEVICE_CTX(&color_light_ctx);
+
+     /* Register callback for handling ZCL commands. */
+    ZB_ZCL_REGISTER_DEVICE_CB(zcl_device_cb);
+
+    /* Init attributes for endpoints */
+    bulb_clusters_attr_init(&zb_dev_ctx, HA_COLOR_LIGHT_ENDPOINT);
+    //TODO: set level of bulb
+    level_control_set_value(zb_dev_ctx.level_control_attr.current_level);
+}
+
 
 /***************************************************************************************************
 * @section Main
@@ -787,6 +1086,7 @@ int main(void)
     log_init();
     timer_init();
     leds_buttons_init();
+    pwm_init();
 
     /* Bluetooth initialization. */
     ble_stack_init();

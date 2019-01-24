@@ -100,6 +100,7 @@
       <file file_name="../../../../../../../modules/nrfx/drivers/src/nrfx_timer.c" />
       <file file_name="../../../../../../../modules/nrfx/drivers/src/nrfx_uart.c" />
       <file file_name="../../../../../../../modules/nrfx/drivers/src/nrfx_uarte.c" />
+      <file file_name="../../../../../../../modules/nrfx/drivers/src/nrfx_pwm.c" />
     </folder>
     <folder Name="Board Support">
       <file file_name="../../../../../../../components/libraries/bsp/bsp.c" />
