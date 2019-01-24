@@ -56,7 +56,6 @@ extern "C" {
 #endif
 
 /* ZigBee device configuration values. */
-#define IEEE_CHANNEL_MASK                       (1l << ZIGBEE_CHANNEL)              /**< Scan only one, predefined channel to find the coordinator. */
 #define BULB_LOCATION_KITCHEN                   0x1D
 #define BULB_LOCATION_OFFICE                    0x24
 
