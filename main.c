@@ -100,7 +100,6 @@
 #define IEEE_CHANNEL_MASK                   ((1l << 11)|(1l << 12)|(1l << 13)|(1l << 14)|(1l << 15)|(1l << 16)|(1l << 17)|(1l << 18)|(1l << 19)|(1l << 20)|(1l << 21)|(1l << 22)|(1l << 23)|(1l << 24)|(1l << 25)|(1l << 26))                  /**< Scan all channels to find the coordinator. */
 #define HA_COLOR_LIGHT_ENDPOINT             1                                       /**< Source endpoint used to control light bulb. */
 #define ERASE_PERSISTENT_CONFIG             ZB_FALSE                                /**< Do not erase NVRAM to save the network parameters after device reboot or power-off. NOTE: If this option is set to ZB_TRUE then do full device erase for all network devices before running other samples. */
-#define ZIGBEE_NETWORK_STATE_LED            BSP_BOARD_LED_2                         /**< LED indicating that color light bulb successfully joind ZigBee network. */
 #define MAX_CHILDREN                        10                                      /**< The maximum amount of connected devices. Setting this value to 0 disables association to this device.  */
 
 static void zigbee_command_handler(const uint8_t * p_command_str, uint16_t length);
@@ -506,7 +505,7 @@ static void timer_init(void)
 
 static void rgb_color_set(uint8_t r_value, uint8_t g_value, uint8_t b_value)
 {
-    NRF_LOG_INFO("Color set = %d %d %d\n", r_value, g_value, b_value);
+    NRF_LOG_DEBUG("Color set = %d %d %d\n", r_value, g_value, b_value);
 
     m_demo1_seq_values.channel_0 = r_value;
     m_demo1_seq_values.channel_1 = g_value;
@@ -685,6 +684,37 @@ static void on_off_set_value(zb_bool_t on)
 /***************************************************************************************************
  * @section Zigbee stack related functions.
  **************************************************************************************************/
+
+/**@brief Indicate the commissioning in progress.
+ *
+ * @param[in]   param   Reference to ZigBee stack buffer that will be used to construct leave request.
+ */
+static void zb_commissioning_indication(zb_uint8_t led_state)
+{
+    zb_ret_t zb_err_code;
+
+    if(ZB_JOINED() == ZB_FALSE)
+    {
+        if (led_state)
+        {
+            led_params.r_value = 0;
+            led_params.g_value = 100;
+            led_params.b_value = 0;
+            rgb_color_set(led_params.r_value, led_params.g_value, led_params.b_value);
+            zb_err_code = ZB_SCHEDULE_ALARM(zb_commissioning_indication, 0, ZB_MILLISECONDS_TO_BEACON_INTERVAL(200));
+            ZB_ERROR_CHECK(zb_err_code);
+        }
+        else
+        {
+            led_params.r_value = 0;
+            led_params.g_value = 0;
+            led_params.b_value = 0;
+            rgb_color_set(led_params.r_value, led_params.g_value, led_params.b_value);
+            zb_err_code = ZB_SCHEDULE_ALARM(zb_commissioning_indication, 1, ZB_MILLISECONDS_TO_BEACON_INTERVAL(2000));
+            ZB_ERROR_CHECK(zb_err_code);
+        }
+    }
+}
 
 /**@brief Perform local operation - leave network.
  *
@@ -968,13 +998,13 @@ void zboss_signal_handler(zb_uint8_t param)
         case ZB_BDB_SIGNAL_DEVICE_REBOOT:
             if (status == RET_OK)
             {
+                /* Connected. Set level of bulb */
                 NRF_LOG_INFO("Joined network successfully");
-                bsp_board_led_on(ZIGBEE_NETWORK_STATE_LED);
+                level_control_set_value(zb_dev_ctx.level_control_attr.current_level);
             }
             else
             {
                 NRF_LOG_ERROR("Failed to join network. Status: %d", status);
-                bsp_board_led_off(ZIGBEE_NETWORK_STATE_LED);
                 zb_err_code = ZB_SCHEDULE_ALARM(device_leave_and_join, 0, ZB_TIME_ONE_SECOND);
                 ZB_ERROR_CHECK(zb_err_code);
             }
@@ -983,10 +1013,11 @@ void zboss_signal_handler(zb_uint8_t param)
         case ZB_ZDO_SIGNAL_LEAVE:
             if (status == RET_OK)
             {
-                bsp_board_led_off(ZIGBEE_NETWORK_STATE_LED);
                 p_leave_params = ZB_ZDO_SIGNAL_GET_PARAMS(p_sg_p, zb_zdo_signal_leave_params_t);
                 NRF_LOG_INFO("Network left. Leave type: %d", p_leave_params->leave_type);
                 device_retry_join(p_leave_params->leave_type);
+                /* Start ZB Commissioning Indication LED */
+                ZB_SCHEDULE_CALLBACK(zb_commissioning_indication, 1);
             }
             else
             {
@@ -1047,9 +1078,6 @@ static void zigbee_init(void)
 
     /* Init attributes for endpoints */
     bulb_clusters_attr_init(&zb_dev_ctx, HA_COLOR_LIGHT_ENDPOINT);
-
-    /* set level of bulb */
-    level_control_set_value(zb_dev_ctx.level_control_attr.current_level);
 }
 
 
@@ -1091,6 +1119,9 @@ int main(void)
     /** Start Zigbee Stack. */
     zb_err_code = zboss_start();
     ZB_ERROR_CHECK(zb_err_code);
+
+    /* Start ZB Commissioning Indication LED */
+    ZB_SCHEDULE_CALLBACK(zb_commissioning_indication, 1);
 
     while(1)
     {
