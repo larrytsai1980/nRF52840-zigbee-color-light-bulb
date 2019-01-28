@@ -99,8 +99,8 @@
 
 #define IEEE_CHANNEL_MASK                   ((1l << 11)|(1l << 12)|(1l << 13)|(1l << 14)|(1l << 15)|(1l << 16)|(1l << 17)|(1l << 18)|(1l << 19)|(1l << 20)|(1l << 21)|(1l << 22)|(1l << 23)|(1l << 24)|(1l << 25)|(1l << 26))                  /**< Scan all channels to find the coordinator. */
 #define HA_COLOR_LIGHT_ENDPOINT             1                                       /**< Source endpoint used to control light bulb. */
-#define ERASE_PERSISTENT_CONFIG             ZB_FALSE                                /**< Do not erase NVRAM to save the network parameters after device reboot or power-off. NOTE: If this option is set to ZB_TRUE then do full device erase for all network devices before running other samples. */
 #define MAX_CHILDREN                        10                                      /**< The maximum amount of connected devices. Setting this value to 0 disables association to this device.  */
+#define ERASE_CONFIG_BUTTON                 BSP_BOARD_BUTTON_0                      /**< Do full device erase if the button is pressed. */
 
 static void zigbee_command_handler(const uint8_t * p_command_str, uint16_t length);
 
@@ -1064,7 +1064,7 @@ static void zigbee_init(void)
     /* Set up Zigbee protocol main parameters. */
     zb_set_network_router_role(IEEE_CHANNEL_MASK);
     zb_set_max_children(MAX_CHILDREN);
-    zb_set_nvram_erase_at_start(ERASE_PERSISTENT_CONFIG);
+    zb_set_nvram_erase_at_start(bsp_button_is_pressed(ERASE_CONFIG_BUTTON) ? ZB_TRUE : ZB_FALSE);
     zb_set_keepalive_timeout(ZB_MILLISECONDS_TO_BEACON_INTERVAL(3000));
 
     /* Initialize application context structure. */
