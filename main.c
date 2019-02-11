@@ -102,6 +102,16 @@
 #define MAX_CHILDREN                        10                                      /**< The maximum amount of connected devices. Setting this value to 0 disables association to this device.  */
 #define ERASE_CONFIG_BUTTON                 BSP_BOARD_BUTTON_0                      /**< Do full device erase if the button is pressed. */
 
+#define COMMAND_ON                          "on"                                    /**< UART command that will turn on found light bulb(s). */
+#define COMMAND_OFF                         "off"                                   /**< UART command that will turn off found light bulb(s). */
+#define COMMAND_WHITE                       "white"                                 /**< UART command that will turn color light bulb to white. */
+#define COMMAND_RED                         "red"                                   /**< UART command that will turn color light bulb to red. */
+#define COMMAND_YELLOW                      "yellow"                                /**< UART command that will turn color light bulb to yellow. */
+#define COMMAND_GREEN                       "green"                                 /**< UART command that will turn color light bulb to green. */
+#define COMMAND_CYAN                        "cyan"                                  /**< UART command that will turn color light bulb to cyan. */
+#define COMMAND_BLUE                        "blue"                                  /**< UART command that will turn color light bulb to blue. */
+#define COMMAND_PURPLE                      "purple"                                /**< UART command that will turn color light bulb to purple. */
+
 static void zigbee_command_handler(const uint8_t * p_command_str, uint16_t length);
 
 BLE_NUS_DEF(m_nus, NRF_SDH_BLE_TOTAL_LINK_COUNT);                                   /**< BLE NUS service instance. */
@@ -618,6 +628,11 @@ static void convert_hsb_to_rgb(uint8_t hue, uint8_t saturation, uint8_t brightne
  */
 static void zb_set_hsb_color_values(zb_uint8_t hue, zb_uint8_t saturation, zb_uint8_t brightness)
 {
+    // update new value to device context
+    zb_dev_ctx.color_control_attr.set_color_info.current_hue = hue;
+    zb_dev_ctx.color_control_attr.set_color_info.current_saturation = saturation;
+    zb_dev_ctx.level_control_attr.current_level = brightness;
+
     // convert HSB color model to RGB color model
     convert_hsb_to_rgb(hue, saturation, brightness, &led_params);
 
@@ -822,8 +837,60 @@ static void leds_buttons_init(void)
  */
 static void zigbee_command_handler(const uint8_t * p_command_str, uint16_t length)
 {
-    NRF_LOG_INFO("Unrecognized UART command received:");
-    NRF_LOG_HEXDUMP_INFO(p_command_str, length);
+    zb_zcl_status_t zcl_status;
+
+
+    /* Process received NUS command */
+    if (strncmp(COMMAND_ON, (char *)p_command_str, strlen(COMMAND_ON)) == 0)
+    {
+        /* Turn off LED */
+        on_off_set_value((zb_bool_t)ZB_ZCL_ON_OFF_IS_ON);
+    }
+    else if (strncmp(COMMAND_OFF, (char *)p_command_str, strlen(COMMAND_OFF)) == 0)
+    {
+        /* Turn on LED */
+        on_off_set_value((zb_bool_t)ZB_ZCL_ON_OFF_IS_OFF);
+    }
+    else if (strncmp(COMMAND_WHITE, (char *)p_command_str, strlen(COMMAND_WHITE)) == 0)
+    {
+        /* Set LED color to white */
+        zb_set_hsb_color_values(0, 0 , zb_dev_ctx.level_control_attr.current_level);
+    }
+    else if (strncmp(COMMAND_RED, (char *)p_command_str, strlen(COMMAND_RED)) == 0)
+    {
+        /* Set LED color to red */
+        zb_set_hsb_color_values(0, 254, zb_dev_ctx.level_control_attr.current_level);
+    }
+    else if (strncmp(COMMAND_YELLOW, (char *)p_command_str, strlen(COMMAND_YELLOW)) == 0)
+    {
+        /* Set LED color to yellow */
+        zb_set_hsb_color_values(42, 254, zb_dev_ctx.level_control_attr.current_level);
+    }
+    else if (strncmp(COMMAND_GREEN, (char *)p_command_str, strlen(COMMAND_GREEN)) == 0)
+    {
+        /* Set LED color to green */
+        zb_set_hsb_color_values(84, 254, zb_dev_ctx.level_control_attr.current_level);
+    }
+    else if (strncmp(COMMAND_CYAN, (char *)p_command_str, strlen(COMMAND_CYAN)) == 0)
+    {
+        /* Set LED color to cyan */
+        zb_set_hsb_color_values(127, 254, zb_dev_ctx.level_control_attr.current_level);
+    }
+    else if (strncmp(COMMAND_BLUE, (char *)p_command_str, strlen(COMMAND_BLUE)) == 0)
+    {
+        /* Set LED color to blue */
+        zb_set_hsb_color_values(169, 254, zb_dev_ctx.level_control_attr.current_level);
+    }
+    else if (strncmp(COMMAND_PURPLE, (char *)p_command_str, strlen(COMMAND_PURPLE)) == 0)
+    {
+        /* Set LED color to purple */
+        zb_set_hsb_color_values(195, 218, zb_dev_ctx.level_control_attr.current_level);
+    }
+    else
+    {
+        NRF_LOG_INFO("Unrecognized UART command received:");
+        NRF_LOG_HEXDUMP_INFO(p_command_str, length);
+    }
 }
 
 /**@brief Function for initializing clusters attributes.
