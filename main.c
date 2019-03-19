@@ -806,11 +806,27 @@ static zb_void_t device_leave_and_join(zb_uint8_t param)
  */
 static void buttons_handler(bsp_event_t evt)
 {
+    zb_ret_t zb_err_code;
+
     switch(evt)
     {
+        case BSP_EVENT_KEY_0:
+            if (zb_dev_ctx.identify_attr.identify_time == ZB_ZCL_IDENTIFY_IDENTIFY_TIME_DEFAULT_VALUE)
+            {
+                /* Put specified endpoint in identifying mode */
+                zb_err_code = zb_bdb_finding_binding_target(HA_COLOR_LIGHT_ENDPOINT);
+                ZB_ERROR_CHECK(zb_err_code);
+                NRF_LOG_INFO("Endpoint %hd put in identifying mode", HA_COLOR_LIGHT_ENDPOINT);
+            }
+            else
+            {
+                /* Print remaining time to stay in identifying mode for every endpoint. */
+                NRF_LOG_INFO("Ep %hd identify time: %hd", HA_COLOR_LIGHT_ENDPOINT, zb_dev_ctx.identify_attr.identify_time);
+            }
+            break;
         default:
             NRF_LOG_INFO("Unhandled BSP Event received: %d", evt);
-            return;
+            break;
     }
 }
 
@@ -969,6 +985,26 @@ static void bulb_clusters_attr_init(zb_bulb_dev_ctx_t * p_device_ctx, zb_uint8_t
     p_device_ctx->color_control_attr.set_defined_primaries_info.number_primaries = 0xff;
 }
 
+/**@brief Function to handle identify notification events on endpoint.
+ * 
+ * @param[IN]   param   Parameter handler is called with.
+ */
+static zb_void_t zb_identify_handler(zb_uint8_t param)
+{
+    if (param)
+    {
+        /* Turn on led indicating ongoing find and bind procedure. */
+        //bsp_board_led_on(ZB_ONGOING_FIND_N_BIND_LED);
+        NRF_LOG_INFO("f n b ongoing - led on");
+    }
+    else
+    {
+        /* Turn off led indicating ongoing find and bind procedure. */
+        //bsp_board_led_off(ZB_ONGOING_FIND_N_BIND_LED);
+        NRF_LOG_INFO("f n b ongoing - led off");
+    }
+}
+
 /**@brief Callback function for handling ZCL commands.
  *
  * @param[IN]   param   Reference to ZigBee stack buffer used to pass received data.
@@ -1092,6 +1128,10 @@ void zboss_signal_handler(zb_uint8_t param)
             }
             break;
 
+        case ZB_BDB_SIGNAL_FINDING_AND_BINDING_TARGET_FINISHED:
+            NRF_LOG_INFO("Find and bind target finished, status: %d", status);
+            break;
+
         case ZB_ZDO_SIGNAL_PRODUCTION_CONFIG_READY:
             if (status != RET_OK)
             {
@@ -1142,6 +1182,9 @@ static void zigbee_init(void)
 
      /* Register callback for handling ZCL commands. */
     ZB_ZCL_REGISTER_DEVICE_CB(zcl_device_cb);
+
+    /* Register handlers to identify notifications */
+    ZB_AF_SET_IDENTIFY_NOTIFICATION_HANDLER(HA_COLOR_LIGHT_ENDPOINT, zb_identify_handler);
 
     /* Init attributes for endpoints */
     bulb_clusters_attr_init(&zb_dev_ctx, HA_COLOR_LIGHT_ENDPOINT);
